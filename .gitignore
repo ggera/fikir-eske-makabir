@@ -1,0 +1,12 @@
+# Generated output (too large for GitHub)
+hadis_clean.pdf
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
