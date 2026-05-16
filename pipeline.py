@@ -1,28 +1,25 @@
 """
 pipeline.py — Hadis OCR Pipeline
 =================================
-Converts a scanned Amharic PDF to a searchable PDF,
-replacing all Ethiopic word separators ፡ (U+1361) with spaces.
+Runs OCR on a scanned Amharic PDF and refreshes cleaned per-page text files.
+Searchable PDF generation is optional because it is the most CPU-intensive step.
 
 Usage:
     python3 pipeline.py
+    python3 pipeline.py --build-pdf
+    python3 pipeline.py --input-pdf "ፍቅር-እስከ-መቃብር-.pdf" --text-dir ocr_text_new
 
 Output:
-    hadis_clean.pdf  — searchable PDF with ፡ replaced by spaces
-    ocr_text/        — per-page plain text files (for inspection)
+    ocr_text/        — per-page cleaned text files
+    hadis_clean.pdf  — searchable PDF when --build-pdf is passed
 """
 
+import argparse
 import os
-import sys
 import fitz           # pymupdf
-import pytesseract
-from pdf2image import convert_from_path
-from PIL import Image
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
 import io
+
+from clean_text import clean
 
 # ── Config ───────────────────────────────────────────────────────────────
 INPUT_PDF   = "hadis_original.pdf"
@@ -37,8 +34,10 @@ REPLACEMENT = " "          # Replace with plain space
 os.makedirs(TEXT_DIR, exist_ok=True)
 
 
-def ocr_page(image: Image.Image) -> str:
+def ocr_page(image) -> str:
     """Run Tesseract OCR on a PIL image, return cleaned text."""
+    import pytesseract
+
     raw = pytesseract.image_to_string(image, lang=LANG)
     return raw.replace(SEPARATOR, REPLACEMENT)
 
@@ -79,59 +78,128 @@ def build_pdf(images, texts, output_path):
     print(f"\n  Saved: {output_path}")
 
 
-def already_done(page_num: int) -> bool:
+def already_done(page_num: int, text_dir: str) -> bool:
     """Return True if this 1-based page has already been OCR'd."""
-    return os.path.exists(os.path.join(TEXT_DIR, f"page_{page_num:04d}.txt"))
+    return os.path.exists(os.path.join(text_dir, f"page_{page_num:04d}.txt"))
+
+
+def clean_all_text_files(total: int, text_dir: str) -> list[int]:
+    """Normalize and clean all OCR text files in place."""
+    missing = []
+    for page_num in range(1, total + 1):
+        txt_path = os.path.join(text_dir, f"page_{page_num:04d}.txt")
+        if not os.path.exists(txt_path):
+            missing.append(page_num)
+            continue
+
+        with open(txt_path, encoding="utf-8") as f:
+            original = f.read()
+
+        cleaned = clean(original)
+        if cleaned != original:
+            with open(txt_path, "w", encoding="utf-8") as f:
+                f.write(cleaned)
+
+    return missing
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run OCR and clean text files for the Hadis PDF.")
+    parser.add_argument(
+        "--input-pdf",
+        default=INPUT_PDF,
+        help=f"Source PDF to OCR. Defaults to {INPUT_PDF}.",
+    )
+    parser.add_argument(
+        "--text-dir",
+        default=TEXT_DIR,
+        help=f"Directory for per-page OCR text files. Defaults to {TEXT_DIR}.",
+    )
+    parser.add_argument(
+        "--output-pdf",
+        default=OUTPUT_PDF,
+        help=f"Path for searchable PDF output when --build-pdf is used. Defaults to {OUTPUT_PDF}.",
+    )
+    parser.add_argument(
+        "--build-pdf",
+        action="store_true",
+        help="Also build the searchable PDF after OCR and cleaning.",
+    )
+    return parser.parse_args()
 
 
 def main():
+    args = parse_args()
+    input_pdf = args.input_pdf
+    text_dir = args.text_dir
+    output_pdf = args.output_pdf
+
+    os.makedirs(text_dir, exist_ok=True)
+
     # Determine total pages without loading all images first
-    doc = fitz.open(INPUT_PDF)
+    doc = fitz.open(input_pdf)
     total = doc.page_count
     doc.close()
     print(f"      {total} pages in PDF.")
 
     # Find first page that still needs OCR
-    first_todo = next((p for p in range(1, total + 1) if not already_done(p)), None)
+    first_todo = next((p for p in range(1, total + 1) if not already_done(p, text_dir)), None)
 
     if first_todo is None:
         print("      All pages already OCR'd — skipping to PDF build step.")
     else:
+        from pdf2image import convert_from_path
+
         print(f"[2/3] Running Tesseract OCR (lang={LANG}), resuming from page {first_todo} ...")
         print(f"[1/3] Converting pages {first_todo}–{total} to images at {DPI} DPI ...")
-        images_todo = convert_from_path(INPUT_PDF, dpi=DPI, first_page=first_todo, last_page=total)
 
-        for idx, img in enumerate(images_todo):
-            page_num = first_todo + idx
+        for page_num in range(first_todo, total + 1):
             print(f"      Page {page_num}/{total} ...", end="\r")
+            images = convert_from_path(
+                input_pdf,
+                dpi=DPI,
+                first_page=page_num,
+                last_page=page_num,
+            )
+            if not images:
+                continue
+
+            img = images[0]
             text = ocr_page(img)
-            txt_path = os.path.join(TEXT_DIR, f"page_{page_num:04d}.txt")
+            txt_path = os.path.join(text_dir, f"page_{page_num:04d}.txt")
             with open(txt_path, "w", encoding="utf-8") as f:
                 f.write(text)
-        print(f"\n      OCR complete. Text saved to '{TEXT_DIR}/'")
+        print(f"\n      OCR complete. Text saved to '{text_dir}/'")
+
+    print(f"[3/3] Cleaning OCR text files ...")
+    missing = clean_all_text_files(total, text_dir)
+    if missing:
+        print(f"      Warning: {len(missing)} pages missing OCR text: {missing[:10]}{'...' if len(missing)>10 else ''}")
+
+    if not args.build_pdf:
+        print("\nDone! Cleaned text files are up to date. Skipped PDF generation.")
+        return
 
     # Load all texts from disk for PDF build
-    print(f"[3/3] Loading all {total} OCR text files ...")
+    print(f"[4/4] Loading all {total} OCR text files ...")
     texts = []
-    missing = []
     for p in range(1, total + 1):
-        txt_path = os.path.join(TEXT_DIR, f"page_{p:04d}.txt")
+        txt_path = os.path.join(text_dir, f"page_{p:04d}.txt")
         if os.path.exists(txt_path):
             with open(txt_path, encoding="utf-8") as f:
                 texts.append(f.read())
         else:
             texts.append("")
-            missing.append(p)
-    if missing:
-        print(f"      Warning: {len(missing)} pages missing OCR text: {missing[:10]}{'...' if len(missing)>10 else ''}")
 
-    print(f"[3/3] Converting all pages to images for PDF build ...")
-    images = convert_from_path(INPUT_PDF, dpi=DPI)
+    from pdf2image import convert_from_path
 
-    print(f"[3/3] Building searchable PDF ...")
-    build_pdf(images, texts, OUTPUT_PDF)
+    print(f"[4/4] Converting all pages to images for PDF build ...")
+    images = convert_from_path(input_pdf, dpi=DPI)
 
-    print(f"\nDone! Output: {OUTPUT_PDF}")
+    print(f"[4/4] Building searchable PDF ...")
+    build_pdf(images, texts, output_pdf)
+
+    print(f"\nDone! Output: {output_pdf}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,68 @@
+name: Release Text PDF
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - build_text_pdf.py
+      - fonts/**
+      - ocr_text/**
+      - requirements.txt
+      - .github/workflows/release-text-pdf.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-text-pdf
+  cancel-in-progress: true
+
+env:
+  RELEASE_TAG: latest
+  RELEASE_TITLE: Latest PDF Release
+  OUTPUT_PDF: fikir-eske-mekabir-text.pdf
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build PDF
+        run: |
+          python build_text_pdf.py \
+            --text-dir ocr_text \
+            --output-pdf "$OUTPUT_PDF"
+
+      - name: Remove older releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api repos/${GITHUB_REPOSITORY}/releases --paginate --jq '.[].tag_name' | while read -r tag; do
+            if [ -n "$tag" ] && [ "$tag" != "$RELEASE_TAG" ]; then
+              gh release delete "$tag" --cleanup-tag -y || true
+            fi
+          done
+
+      - name: Replace rolling release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release delete "$RELEASE_TAG" --cleanup-tag -y || true
+          gh release create "$RELEASE_TAG" "$OUTPUT_PDF#Formatted text PDF" \
+            --title "$RELEASE_TITLE" \
+            --notes "Automated PDF release for ${GITHUB_SHA}."
