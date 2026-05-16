@@ -20,7 +20,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
 TEXT_DIR   = "ocr_text"
-OUTPUT_PDF = "hadis_text.pdf"
+OUTPUT_PDF = "normalized-fikir-eske-makabir-text.pdf"
 FONT_PATH  = "fonts/Geez_Manuscript_Zemen.ttf"
 FONT_NAME  = "GeezManuscriptZemen"
 REPO_ROOT = Path(__file__).resolve().parent

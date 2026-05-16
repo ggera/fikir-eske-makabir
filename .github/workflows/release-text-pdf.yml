@@ -22,7 +22,7 @@ concurrency:
 env:
   RELEASE_TAG: latest
   RELEASE_TITLE: Latest PDF Release
-  OUTPUT_PDF: fikir-eske-mekabir-text.pdf
+  OUTPUT_PDF: normalized-fikir-eske-makabir-text.pdf
 
 jobs:
   build-and-release:

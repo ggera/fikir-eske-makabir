@@ -7,7 +7,7 @@ Searchable PDF generation is optional because it is the most CPU-intensive step.
 Usage:
     python3 pipeline.py
     python3 pipeline.py --build-pdf
-    python3 pipeline.py --input-pdf "ፍቅር-እስከ-መቃብር-.pdf" --text-dir ocr_text_new
+    python3 pipeline.py --input-pdf "original-ፍቅር እስከ መቃብር.pdf" --text-dir ocr_text_new
 
 Output:
     ocr_text/        — per-page cleaned text files
@@ -22,7 +22,7 @@ import io
 from clean_text import clean
 
 # ── Config ───────────────────────────────────────────────────────────────
-INPUT_PDF   = "hadis_original.pdf"
+INPUT_PDF   = "original-ፍቅር እስከ መቃብር.pdf"
 OUTPUT_PDF  = "hadis_clean.pdf"
 TEXT_DIR    = "ocr_text"
 DPI         = 300          # Higher = better OCR accuracy, slower

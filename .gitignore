@@ -11,3 +11,7 @@ __pycache__/
 .venv/
 venv/
 hadis_text.pdf
+
+# Local OCR/source artifacts
+tmp_*.png
+tmp_*.pdf
