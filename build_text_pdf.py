@@ -206,7 +206,7 @@ class PageRenderer:
 
 _MARKDOWN_H3_RE = re.compile(r"^###\s+(.+)$")
 _RAW_CHAPTER_RE = re.compile(r"^ም[እዕአ]ራፍ\b")
-_TOC_ENTRY_RE   = re.compile(r"^(.*?)\t+(\d+)\s*$")
+_TOC_ENTRY_RE   = re.compile(r"^(.+?)\s{2,}(\d+)\s*$")
 _STRONG_PUNCT   = ("።", "?", "!", "؟")
 
 
