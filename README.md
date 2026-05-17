@@ -1,5 +1,8 @@
 # ፍቅር እስከ መቃብር — Fikir Eske Mekabir
 
+[![Text licence: CC BY-NC 4.0](https://img.shields.io/badge/text%20licence-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
+[![Code licence: MIT](https://img.shields.io/badge/code%20licence-MIT-yellow.svg)](LICENSE)
+
 **ፍቅር እስከ መቃብር** (*Fikir Eske Mekabir*, "Love to the Grave") is a landmark Amharic novel by
 **Haddis Alemayehu**, first published in 1968.  It is widely regarded as the greatest novel in the
 Amharic literary tradition and won the Haile Selassie I Prize for Amharic Literature in 1969.

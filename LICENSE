@@ -1,0 +1,62 @@
+# Licensing
+
+This repository contains two distinct types of work covered by separate licences.
+
+---
+
+## Text corpus and formatted PDF
+
+The OCR-corrected text files in `ocr_text/`, the formatted PDF output, and the
+`docs/` landing page are licensed under the
+
+**Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)**
+
+You are free to:
+  - Share  — copy and redistribute the material in any medium or format
+  - Adapt  — remix, transform, and build upon the material
+
+Under the following terms:
+  - Attribution   — You must give appropriate credit, provide a link to the
+                    licence, and indicate if changes were made.
+  - NonCommercial — You may not use the material for commercial purposes.
+
+Full legal text: https://creativecommons.org/licenses/by-nc/4.0/legalcode
+
+### Note on the underlying literary work
+
+ፍቅር እስከ መቃብር (Fikir Eske Mekabir) was written by Haddis Alemayehu and first
+published in 1968.  The original literary text remains the intellectual property
+of the Haddis Alemayehu estate and is protected by copyright.  The CC BY-NC 4.0
+licence above applies solely to the OCR corrections, text formatting, and other
+supplementary materials produced by this project — not to the underlying literary
+work itself.
+
+---
+
+## Tooling and source code
+
+The Python scripts (`pipeline.py`, `clean_text.py`, `build_text_pdf.py`),
+GitHub Actions workflows, and all other source code in this repository are
+released under the MIT Licence.
+
+MIT License
+
+Copyright (c) 2026 ggera
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
