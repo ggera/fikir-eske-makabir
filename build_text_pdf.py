@@ -15,6 +15,7 @@ from reportlab.pdfgen.canvas import Canvas
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.units import cm
 from reportlab.lib.colors import HexColor
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
@@ -22,17 +23,18 @@ TEXT_DIR   = "ocr_text"
 OUTPUT_PDF = "normalized-fikir-eske-makabir-text.pdf"
 FONT_PATH  = "fonts/Geez_Manuscript_Zemen.ttf"
 FONT_NAME  = "GeezManuscriptZemen"
-REPO_ROOT  = Path(__file__).resolve().parent
-TOC_FILE   = "page_0006.txt"
+REPO_ROOT   = Path(__file__).resolve().parent
+COVER_IMAGE = REPO_ROOT / "cover2.jpg"
+TOC_FILE    = "page_0006.txt"
 SOURCE_PAGE_OFFSET = 2
 
 TITLE  = "ፍቅር እስከ መቃብር"
 AUTHOR = "ሀዲስ ዓለማየሁ"
 
 C_TEXT   = HexColor("#1C1208")
-C_HEADER = HexColor("#3B2410")
+C_HEADER = HexColor("#1C1208")
 C_RULE   = HexColor("#B89A6A")
-C_LABEL  = HexColor("#7A5C35")
+C_LABEL  = HexColor("#1C1208")
 C_FOLIO  = HexColor("#5C3D1E")
 
 PAGE_W, PAGE_H = landscape(A4)
@@ -189,6 +191,25 @@ class TwoColumnRenderer:
                 space(2)
             elif blk.kind == "toc_entry":
                 draw_toc_entry(blk.text, blk.num)
+            elif blk.kind == "caption":
+                col_cx = COL_X[col] + COL_W / 2
+                col_my = (COL_TOP + COL_BOT) / 2
+                c.setFont(FONT_NAME, H3_SIZE)
+                c.setFillColor(C_TEXT)
+                c.drawCentredString(col_cx, col_my, blk.text)
+            elif blk.kind == "image":
+                try:
+                    ir = ImageReader(blk.text)
+                    iw, ih = ir.getSize()
+                    col_w_avail = right_x - x
+                    col_h_avail = COL_TOP - COL_BOT
+                    scale = min(col_w_avail / iw, col_h_avail / ih)
+                    dw, dh = iw * scale, ih * scale
+                    dx = x + (col_w_avail - dw) / 2
+                    dy = (COL_TOP + COL_BOT) / 2 - dh / 2
+                    c.drawImage(ir, dx, dy, width=dw, height=dh)
+                except Exception:
+                    pass
 
     def save(self) -> None:
         self._c.save()
@@ -197,7 +218,7 @@ class TwoColumnRenderer:
 _MARKDOWN_H3_RE = re.compile(r"^###\s+(.+)$")
 _RAW_CHAPTER_RE = re.compile(r"^ም[እዕአ]ራፍ\b")
 _TOC_ENTRY_RE   = re.compile(r"^(.+?)\s{2,}(\d+)\s*$")
-_STRONG_PUNCT   = ("።", "?", "!", "؟")
+
 
 
 def load_toc_title_map(text_dir: Path) -> dict:
@@ -225,16 +246,6 @@ def _heading_from_line(line: str):
     m = _MARKDOWN_H3_RE.match(line)
     return m.group(1).strip() if m else None
 
-def _looks_like_verse_block(lines: list, index: int) -> bool:
-    window, cursor = [], index
-    while cursor < len(lines) and lines[cursor] and len(window) < 4:
-        window.append(lines[cursor]); cursor += 1
-    if len(window) < 2:
-        return False
-    return sum(1 for ln in window
-               if _is_short_line(ln, 24) and not ln.endswith(_STRONG_PUNCT)) >= 2
-
-
 def page_to_blocks(text: str, toc_title=None) -> list:
     blocks = []
     lines  = [ln.strip() for ln in text.splitlines()]
@@ -249,6 +260,11 @@ def page_to_blocks(text: str, toc_title=None) -> list:
         blocks.append(Block("space", pts=4))
         blocks.append(Block("h3", toc_title))
         blocks.append(Block("space", pts=8))
+
+    non_empty = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if not toc_title and len(non_empty) == 1 and len(re.sub(r"\s+", "", non_empty[0])) <= 25:
+        blocks.append(Block("caption", non_empty[0]))
+        return blocks
 
     i = 0
     while i < len(lines):
@@ -282,20 +298,6 @@ def page_to_blocks(text: str, toc_title=None) -> list:
                 i += 1
             blocks.append(Block("space", pts=8))
             i += 1
-            continue
-        if _looks_like_verse_block(lines, i):
-            flush()
-            start_i = i
-            while i < len(lines) and lines[i]:
-                vline = lines[i].replace("\t", " ")
-                if not (_is_short_line(vline, 24) and not vline.endswith(_STRONG_PUNCT)):
-                    break
-                blocks.append(Block("label", vline))
-                i += 1
-            if i == start_i:
-                para.append(lines[i].replace("\t", " "))
-                i += 1
-            blocks.append(Block("space", pts=5))
             continue
         para.append(line)
         i += 1
@@ -336,7 +338,10 @@ def main():
         left_fname  = files[i]
         right_fname = files[i + 1] if i + 1 < total else None
         left_text   = (text_dir / left_fname).read_text(encoding="utf-8")
-        left_blocks = page_to_blocks(left_text, toc_title=toc_map.get(i + 1))
+        if i == 0 and COVER_IMAGE.exists():
+            left_blocks = [Block("image", text=str(COVER_IMAGE))]
+        else:
+            left_blocks = page_to_blocks(left_text, toc_title=toc_map.get(i + 1))
         right_blocks = []
         if right_fname:
             right_text   = (text_dir / right_fname).read_text(encoding="utf-8")
