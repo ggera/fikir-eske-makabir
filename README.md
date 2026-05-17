@@ -101,9 +101,10 @@ This ensures the download link above always points to the most up-to-date versio
 ## Credits
 
 **Source scan**
-The original scanned PDF (`original-ፍቅር እስከ መቃብር.pdf`) was uploaded to the
-Internet Archive by **Fesseha Atlaw (ፍሥሓ አጥላው)** in 2018.
-Source: [archive.org/details/fikir](https://archive.org/details/fikir)
+The original scanned PDF (`original-ፍቅር እስከ መቃብር.pdf`) is a 555-page image scan
+created in March 2011 (Adobe Acrobat 10.0 / PDFScanLib v1.2.2) that has been
+widely shared in the Ethiopian digital community.  If you know the definitive
+original source, please open an issue or pull request to add proper credit.
 
 **OCR normalisation — Hamburg `amseg` library**
 Amharic text normalisation (homophone canonicalisation, segmentation support) is performed with the
