@@ -3,18 +3,20 @@ build_text_pdf.py — ፍቅር እስከ መቃብር — elegant modern text P
 ==============================================================
 Landscape A4, two original pages per PDF spread.
 Design: warm book palette · decorative header/footer · column rule.
+
+Rendering: direct ReportLab canvas (no Platypus layout engine).
+Platypus with TA_JUSTIFY over 500+ pages of Amharic text consumed
+2+ GB RAM and 20+ minutes; direct canvas reduces this to ~seconds.
 """
 
 import argparse
 import os
 import re
+from dataclasses import dataclass
 from pathlib import Path
-from reportlab.platypus import BaseDocTemplate, PageTemplate, Frame, \
-    Paragraph, Spacer
-from reportlab.lib.styles import ParagraphStyle
+from reportlab.pdfgen.canvas import Canvas
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.units import cm
-from reportlab.lib.enums import TA_JUSTIFY, TA_CENTER, TA_LEFT
 from reportlab.lib.colors import HexColor
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -31,318 +33,336 @@ TITLE  = "ፍቅር እስከ መቃብር"
 AUTHOR = "ሀዲስ ዓለማየሁ"
 
 # ── Palette ──────────────────────────────────────────────────────────────
-C_TEXT   = HexColor("#1C1208")   # warm near-black
-C_HEADER = HexColor("#3B2410")   # deep espresso brown
-C_RULE   = HexColor("#B89A6A")   # antique gold
-C_LABEL  = HexColor("#7A5C35")   # medium amber
-C_FOLIO  = HexColor("#5C3D1E")   # dark amber
+C_TEXT   = HexColor("#1C1208")
+C_HEADER = HexColor("#3B2410")
+C_RULE   = HexColor("#B89A6A")
+C_LABEL  = HexColor("#7A5C35")
+C_FOLIO  = HexColor("#5C3D1E")
 
 # ── Page geometry ────────────────────────────────────────────────────────
-PAGE_W, PAGE_H = landscape(A4)   # 841.89 × 595.28 pt
+PAGE_W, PAGE_H = landscape(A4)
 L_MARGIN   = 1.0 * cm
 R_MARGIN   = 0.4 * cm
-TOP_MARGIN = 2.0 * cm           # sits below decorative header
-BOT_MARGIN = 1.4 * cm           # sits above decorative footer
+TOP_MARGIN = 2.0 * cm
+BOT_MARGIN = 1.4 * cm
 GUTTER     = 0.8 * cm
 
-COL_W = (PAGE_W - L_MARGIN - R_MARGIN - GUTTER) / 2
-COL_H = PAGE_H - TOP_MARGIN - BOT_MARGIN
+COL_W   = (PAGE_W - L_MARGIN - R_MARGIN - GUTTER) / 2
+COL_H   = PAGE_H - TOP_MARGIN - BOT_MARGIN
+COL_PAD = 3.0                        # horizontal inner padding (pt)
+COL_X   = [L_MARGIN, L_MARGIN + COL_W + GUTTER]
+COL_TOP = PAGE_H - TOP_MARGIN        # canvas y of column top
+COL_BOT = BOT_MARGIN                 # canvas y of column bottom
+TEXT_W  = COL_W - 2 * COL_PAD       # usable text width inside a column
+
+# ── Text metrics ─────────────────────────────────────────────────────────
+BODY_SIZE    = 11.0;  BODY_LEADING    = 18.5
+H3_SIZE      = 13.0;  H3_LEADING      = 18.0
+LABEL_SIZE   =  9.0;  LABEL_LEADING   = 13.5
 
 
-# ── Canvas decorations ───────────────────────────────────────────────────
+# ── Block types ───────────────────────────────────────────────────────────
 
-def draw_decorations(canvas, doc):
-    """Header bar, footer bar, and column divider on every page."""
-    canvas.saveState()
+@dataclass
+class Block:
+    kind: str        # 'body' | 'h3' | 'label' | 'space'
+    text: str = ""
+    pts: float = 0.0  # vertical space for 'space' blocks
 
-    # Header rule + title
+
+# ── Canvas decorations ────────────────────────────────────────────────────
+
+def draw_decorations(c: Canvas, page_num: int) -> None:
+    c.saveState()
+
     rule_y = PAGE_H - 1.55 * cm
-    canvas.setStrokeColor(C_RULE)
-    canvas.setLineWidth(0.75)
-    canvas.line(L_MARGIN, rule_y, PAGE_W - R_MARGIN, rule_y)
+    c.setStrokeColor(C_RULE)
+    c.setLineWidth(0.75)
+    c.line(L_MARGIN, rule_y, PAGE_W - R_MARGIN, rule_y)
+    c.setFillColor(C_HEADER)
+    c.setFont(FONT_NAME, 10.5)
+    c.drawCentredString(PAGE_W / 2, rule_y + 5, TITLE)
 
-    canvas.setFillColor(C_HEADER)
-    canvas.setFont(FONT_NAME, 10.5)
-    canvas.drawCentredString(PAGE_W / 2, rule_y + 5, TITLE)
+    foot_y = BOT_MARGIN - 0.5 * cm
+    c.setStrokeColor(C_RULE)
+    c.setLineWidth(0.4)
+    c.line(L_MARGIN, foot_y, PAGE_W - R_MARGIN, foot_y)
+    c.setFillColor(C_FOLIO)
+    c.setFont(FONT_NAME, 8.5)
+    c.drawCentredString(PAGE_W / 2, foot_y - 10, str(page_num))
+    c.setFont(FONT_NAME, 7.5)
+    c.setFillColor(C_LABEL)
+    c.drawString(L_MARGIN, foot_y - 10, AUTHOR)
 
-    # Footer rule + page number + author
-    foot_rule_y = BOT_MARGIN - 0.5 * cm
-    canvas.setStrokeColor(C_RULE)
-    canvas.setLineWidth(0.4)
-    canvas.line(L_MARGIN, foot_rule_y, PAGE_W - R_MARGIN, foot_rule_y)
-
-    canvas.setFillColor(C_FOLIO)
-    canvas.setFont(FONT_NAME, 8.5)
-    canvas.drawCentredString(PAGE_W / 2, foot_rule_y - 10, str(doc.page))
-
-    canvas.setFont(FONT_NAME, 7.5)
-    canvas.setFillColor(C_LABEL)
-    canvas.drawString(L_MARGIN, foot_rule_y - 10, AUTHOR)
-
-    # Vertical column divider
     div_x = L_MARGIN + COL_W + GUTTER / 2
-    canvas.setStrokeColor(C_RULE)
-    canvas.setLineWidth(0.5)
-    canvas.line(div_x, BOT_MARGIN, div_x, PAGE_H - TOP_MARGIN + 0.35 * cm)
+    c.setStrokeColor(C_RULE)
+    c.setLineWidth(0.5)
+    c.line(div_x, COL_BOT, div_x, PAGE_H - TOP_MARGIN + 0.35 * cm)
 
-    canvas.restoreState()
-
-
-# ── Page template ────────────────────────────────────────────────────────
-
-def make_page_template():
-    pad = 3   # inner column padding (pt)
-    left_frame = Frame(
-        L_MARGIN, BOT_MARGIN,
-        COL_W, COL_H,
-        leftPadding=pad, rightPadding=pad,
-        topPadding=4, bottomPadding=2,
-        id="left",
-    )
-    right_frame = Frame(
-        L_MARGIN + COL_W + GUTTER, BOT_MARGIN,
-        COL_W, COL_H,
-        leftPadding=pad, rightPadding=pad,
-        topPadding=4, bottomPadding=2,
-        id="right",
-    )
-    return PageTemplate(
-        id="two_col",
-        frames=[left_frame, right_frame],
-        onPage=draw_decorations,
-    )
+    c.restoreState()
 
 
-# ── Content helpers ───────────────────────────────────────────────────────
+# ── Column-flow renderer ──────────────────────────────────────────────────
+
+def _word_wrap(c: Canvas, text: str, size: float) -> list:
+    """Split *text* into lines that fit within TEXT_W at *size*."""
+    words = text.split()
+    if not words:
+        return [""]
+    sp_w = c.stringWidth(" ", FONT_NAME, size)
+    lines, cur, cur_w = [], [], 0.0
+    for word in words:
+        ww = c.stringWidth(word, FONT_NAME, size)
+        needed = cur_w + (sp_w if cur else 0.0) + ww
+        if cur and needed > TEXT_W:
+            lines.append(" ".join(cur))
+            cur, cur_w = [word], ww
+        else:
+            cur.append(word)
+            cur_w = needed
+    if cur:
+        lines.append(" ".join(cur))
+    return lines
+
+
+class ColumnPager:
+    """Streams content into left/right columns across landscape A4 pages."""
+
+    def __init__(self, path: str) -> None:
+        self._c = Canvas(path, pagesize=landscape(A4))
+        self._c.setTitle(TITLE)
+        self._c.setAuthor(AUTHOR)
+        self._c.setSubject("ልቦለድ ታሪክ")
+        self._page_num = 1
+        self._col = 0
+        self._y = COL_TOP
+        self._col_has_content = False
+        draw_decorations(self._c, self._page_num)
+
+    # ── Navigation ────────────────────────────────────────────────────────
+
+    def _space_left(self) -> float:
+        return self._y - COL_BOT
+
+    def _advance(self) -> None:
+        if self._col == 0:
+            self._col = 1
+        else:
+            self._c.showPage()
+            self._page_num += 1
+            self._col = 0
+            draw_decorations(self._c, self._page_num)
+        self._y = COL_TOP
+        self._col_has_content = False
+
+    @property
+    def _x(self) -> float:
+        return COL_X[self._col] + COL_PAD
+
+    # ── Drawing primitives ────────────────────────────────────────────────
+
+    def _set_font(self, size: float, color) -> None:
+        self._c.setFont(FONT_NAME, size)
+        self._c.setFillColor(color)
+
+    def space(self, pts: float) -> None:
+        if self._col_has_content and self._space_left() > pts:
+            self._y -= pts
+
+    def draw_line(self, text: str, size: float, leading: float, color) -> None:
+        if self._space_left() < leading:
+            self._advance()
+        self._set_font(size, color)
+        self._c.drawString(self._x, self._y - size, text)
+        self._y -= leading
+        self._col_has_content = True
+
+    def draw_wrapped(self, text: str, size: float, leading: float, color) -> None:
+        lines = _word_wrap(self._c, text, size)
+        self._set_font(size, color)
+        for line in lines:
+            if self._space_left() < leading:
+                self._advance()
+                self._set_font(size, color)
+            self._c.drawString(self._x, self._y - size, line)
+            self._y -= leading
+            self._col_has_content = True
+
+    # ── Block renderer ────────────────────────────────────────────────────
+
+    def render(self, blocks: list) -> None:
+        for blk in blocks:
+            if blk.kind == "space":
+                self.space(blk.pts)
+            elif blk.kind == "h3":
+                self.space(4)
+                self.draw_wrapped(blk.text, H3_SIZE, H3_LEADING, C_HEADER)
+                self.space(8)
+            elif blk.kind == "body":
+                self.draw_wrapped(blk.text, BODY_SIZE, BODY_LEADING, C_TEXT)
+                self.space(0.5)
+            elif blk.kind == "label":
+                self.draw_line(blk.text, LABEL_SIZE, LABEL_LEADING, C_LABEL)
+                self.space(2)
+
+    def save(self) -> None:
+        self._c.save()
+
+
+# ── Text → Block conversion ───────────────────────────────────────────────
 
 _MARKDOWN_H3_RE = re.compile(r"^###\s+(.+)$")
 _RAW_CHAPTER_RE = re.compile(r"^ም[እዕአ]ራፍ\b")
-_STRONG_PUNCT = ("።", "?", "!", "؟")
+_STRONG_PUNCT   = ("።", "?", "!", "؟")
 
 
-def load_toc_title_map(text_dir: Path) -> dict[int, str]:
+def load_toc_title_map(text_dir: Path) -> dict:
     toc_path = text_dir / TOC_FILE
     if not toc_path.exists():
         return {}
-
     title_map = {}
-    toc_text = toc_path.read_text(encoding="utf-8")
-    for raw_line in toc_text.splitlines():
+    for raw_line in toc_path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line == "ማውጫ":
             continue
-
-        match = re.match(r"^(.*?)\s+(\d+)\s*$", line)
-        if not match:
-            continue
-
-        title = match.group(1).strip()
-        printed_page = int(match.group(2))
-        title_map[printed_page + SOURCE_PAGE_OFFSET] = title
-
+        m = re.match(r"^(.*?)\s+(\d+)\s*$", line)
+        if m:
+            title_map[int(m.group(2)) + SOURCE_PAGE_OFFSET] = m.group(1).strip()
     return title_map
 
 
 def _is_short_line(line: str, limit: int = 26) -> bool:
-    compact = re.sub(r"\s+", "", line)
-    return len(compact) <= limit
+    return len(re.sub(r"\s+", "", line)) <= limit
 
 
 def _is_chapter_line(line: str) -> bool:
     return bool(_RAW_CHAPTER_RE.match(line) or _MARKDOWN_H3_RE.match(line))
 
 
-def _heading_from_line(line: str) -> str | None:
-    markdown_match = _MARKDOWN_H3_RE.match(line)
-    if markdown_match:
-        return markdown_match.group(1).strip()
-    return None
+def _heading_from_line(line: str):
+    m = _MARKDOWN_H3_RE.match(line)
+    return m.group(1).strip() if m else None
 
 
-def _looks_like_verse_block(lines, index: int) -> bool:
-    window = []
-    cursor = index
+def _looks_like_verse_block(lines: list, index: int) -> bool:
+    window, cursor = [], index
     while cursor < len(lines) and lines[cursor] and len(window) < 4:
         window.append(lines[cursor])
         cursor += 1
-
     if len(window) < 2:
         return False
-
-    short_unpunctuated = sum(
-        1 for line in window
-        if _is_short_line(line, 24) and not line.endswith(_STRONG_PUNCT)
-    )
-    return short_unpunctuated >= 2
+    return sum(
+        1 for ln in window
+        if _is_short_line(ln, 24) and not ln.endswith(_STRONG_PUNCT)
+    ) >= 2
 
 
-def _emit_paragraph(elems, paragraph_lines, body_style):
-    if paragraph_lines:
-        elems.append(Paragraph(" ".join(paragraph_lines), body_style))
-        paragraph_lines.clear()
+def page_to_blocks(text: str, toc_title=None) -> list:
+    """Convert one source page's text into a list of render Blocks."""
+    blocks = []
+    lines = [ln.strip() for ln in text.splitlines()]
+    para = []
 
+    def flush():
+        if para:
+            blocks.append(Block("body", " ".join(para)))
+            para.clear()
 
-def page_elements(page_num, text, body_style, label_style, h3_style, toc_title=None):
-    """Flowables for one original page."""
-    elems = []
-    safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    lines = [raw_line.strip() for raw_line in safe.splitlines()]
-    paragraph_lines = []
     if toc_title:
-        elems.append(Spacer(1, 4))
-        elems.append(Paragraph(toc_title, h3_style))
-        elems.append(Spacer(1, 8))
+        blocks.append(Block("space", pts=4))
+        blocks.append(Block("h3", toc_title))
+        blocks.append(Block("space", pts=8))
 
-    index = 0
-    while index < len(lines):
-        line = lines[index]
+    i = 0
+    while i < len(lines):
+        line = lines[i]
 
         if not line:
-            _emit_paragraph(elems, paragraph_lines, body_style)
-            elems.append(Spacer(1, 7))
-            index += 1
+            flush()
+            blocks.append(Block("space", pts=7))
+            i += 1
             continue
 
         if _is_chapter_line(line):
-            _emit_paragraph(elems, paragraph_lines, body_style)
-            heading_text = _heading_from_line(line)
-            if heading_text and heading_text != toc_title:
-                elems.append(Spacer(1, 4))
-                elems.append(Paragraph(heading_text, h3_style))
-                elems.append(Spacer(1, 8))
-            elems.append(Spacer(1, 4))
-            next_line = lines[index + 1] if index + 1 < len(lines) else ""
-            if heading_text is None:
-                index += 1
+            flush()
+            heading = _heading_from_line(line)
+            if heading and heading != toc_title:
+                blocks.append(Block("space", pts=4))
+                blocks.append(Block("h3", heading))
+                blocks.append(Block("space", pts=8))
+            blocks.append(Block("space", pts=4))
+            if heading is None:
+                i += 1
                 continue
+            next_line = lines[i + 1] if i + 1 < len(lines) else ""
             if next_line and _is_short_line(next_line, 20):
-                elems.append(Paragraph(next_line, label_style))
-                index += 1
-            elems.append(Spacer(1, 8))
-            index += 1
+                blocks.append(Block("label", next_line))
+                i += 1
+            blocks.append(Block("space", pts=8))
+            i += 1
             continue
 
-        if _looks_like_verse_block(lines, index):
-            _emit_paragraph(elems, paragraph_lines, body_style)
-            while index < len(lines) and lines[index]:
-                verse_line = lines[index]
-                if not (_is_short_line(verse_line, 24) and not verse_line.endswith(_STRONG_PUNCT)):
+        if _looks_like_verse_block(lines, i):
+            flush()
+            start_i = i
+            while i < len(lines) and lines[i]:
+                vline = lines[i]
+                if not (_is_short_line(vline, 24) and not vline.endswith(_STRONG_PUNCT)):
                     break
-                elems.append(Paragraph(verse_line, label_style))
-                index += 1
-            elems.append(Spacer(1, 5))
+                blocks.append(Block("label", vline))
+                i += 1
+            if i == start_i:
+                # First line wasn't verse-like; treat as body to avoid infinite loop
+                para.append(lines[i])
+                i += 1
+            blocks.append(Block("space", pts=5))
             continue
 
-        paragraph_lines.append(line)
-        index += 1
+        para.append(line)
+        i += 1
 
-    _emit_paragraph(elems, paragraph_lines, body_style)
-    elems.append(Spacer(1, 10))
-    return elems
+    flush()
+    blocks.append(Block("space", pts=10))
+    return blocks
 
 
-# ── Main ──────────────────────────────────────────────────────────────────
+# ── CLI ───────────────────────────────────────────────────────────────────
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Build the formatted text PDF from OCR text files.")
-    parser.add_argument(
-        "--text-dir",
-        default=TEXT_DIR,
-        help=f"Directory containing per-page OCR text files. Defaults to {TEXT_DIR}.",
-    )
-    parser.add_argument(
-        "--output-pdf",
-        default=OUTPUT_PDF,
-        help=f"Output PDF path. Defaults to {OUTPUT_PDF}.",
-    )
-    parser.add_argument(
-        "--font-path",
-        default=FONT_PATH,
-        help=f"Path to the Ethiopic font file. Defaults to {FONT_PATH}.",
-    )
-    return parser.parse_args()
+    p = argparse.ArgumentParser(description="Build the formatted text PDF from OCR text files.")
+    p.add_argument("--text-dir",   default=TEXT_DIR,   help="OCR text directory.")
+    p.add_argument("--output-pdf", default=OUTPUT_PDF, help="Output PDF path.")
+    p.add_argument("--font-path",  default=FONT_PATH,  help="Ethiopic TTF font path.")
+    return p.parse_args()
 
 
 def main():
     args = parse_args()
-    text_dir = Path(args.text_dir)
-    if not text_dir.is_absolute():
-        text_dir = REPO_ROOT / text_dir
 
-    output_pdf = Path(args.output_pdf)
-    if not output_pdf.is_absolute():
-        output_pdf = REPO_ROOT / output_pdf
+    def abs_path(s):
+        p = Path(s)
+        return p if p.is_absolute() else REPO_ROOT / p
 
-    font_path = Path(args.font_path)
-    if not font_path.is_absolute():
-        font_path = REPO_ROOT / font_path
+    text_dir   = abs_path(args.text_dir)
+    output_pdf = abs_path(args.output_pdf)
+    font_path  = abs_path(args.font_path)
 
     pdfmetrics.registerFont(TTFont(FONT_NAME, str(font_path)))
 
-    body_style = ParagraphStyle(
-        "body",
-        fontName=FONT_NAME,
-        fontSize=11,
-        leading=18.5,
-        alignment=TA_JUSTIFY,
-        spaceAfter=0.5,
-        textColor=C_TEXT,
-        splitLongWords=False,
-    )
-    label_style = ParagraphStyle(
-        "label",
-        fontName=FONT_NAME,
-        fontSize=9,
-        leading=13.5,
-        alignment=TA_LEFT,
-        textColor=C_LABEL,
-        spaceAfter=2,
-    )
-    h3_style = ParagraphStyle(
-        "h3",
-        fontName=FONT_NAME,
-        fontSize=13,
-        leading=18,
-        alignment=TA_LEFT,
-        textColor=C_HEADER,
-        spaceAfter=4,
-    )
-    toc_title_map = load_toc_title_map(text_dir)
+    toc_map = load_toc_title_map(text_dir)
+    files   = sorted(f for f in os.listdir(text_dir) if f.endswith(".txt"))
+    total   = len(files)
+    print(f"Building text PDF from {total} source pages …")
 
-    files = sorted(f for f in os.listdir(text_dir) if f.endswith(".txt"))
-    total = len(files)
-    print(f"Building 2-up text PDF from {total} pages ...")
-
-    doc = BaseDocTemplate(
-        str(output_pdf),
-        pagesize=landscape(A4),
-        leftMargin=L_MARGIN,
-        rightMargin=R_MARGIN,
-        topMargin=TOP_MARGIN,
-        bottomMargin=BOT_MARGIN,
-        title=TITLE,
-        author=AUTHOR,
-        subject="ልቦለድ ታሪክ",
-    )
-    doc.addPageTemplates([make_page_template()])
-
-    story = []
+    pager = ColumnPager(str(output_pdf))
     for i, fname in enumerate(files):
-        print(f"  Page {i + 1}/{total} ...", end="\r")
-        text = open(text_dir / fname, encoding="utf-8").read()
-        story.extend(
-            page_elements(
-                i + 1,
-                text,
-                body_style,
-                label_style,
-                h3_style,
-                toc_title=toc_title_map.get(i + 1),
-            )
-        )
+        print(f"  {i + 1}/{total}\r", end="", flush=True)
+        text   = (text_dir / fname).read_text(encoding="utf-8")
+        blocks = page_to_blocks(text, toc_title=toc_map.get(i + 1))
+        pager.render(blocks)
 
-    doc.build(story)
-    print(f"\nDone! Output: {output_pdf}")
+    pager.save()
+    print(f"\nDone → {output_pdf}")
 
 
 if __name__ == "__main__":
