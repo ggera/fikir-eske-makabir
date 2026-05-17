@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - build_text_pdf.py
+      - docs/**
       - fonts/**
       - ocr_text/**
       - requirements.txt
